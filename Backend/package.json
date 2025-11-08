@@ -1,0 +1,30 @@
+{
+  "name": "intelligent-floor-plan-management-system",
+  "version": "1.0.0",
+  "description": "Intelligent Floor-plan Management-system",
+  "main": "routes.js",
+  "scripts": {
+    "test": "This is test command"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Deepanshi03/Intelligent-Floor-Plan-Management-System.git"
+  },
+  "keywords": [
+    "Floor",
+    "Plan",
+    "Management"
+  ],
+  "author": "Deepanshi Dey",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/Deepanshi03/Intelligent-Floor-Plan-Management-System/issues"
+  },
+  "homepage": "https://github.com/Deepanshi03/Intelligent-Floor-Plan-Management-System#readme",
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.3",
+    "express": "^4.18.2",
+    "mongoose": "^8.1.2"
+  }
+}

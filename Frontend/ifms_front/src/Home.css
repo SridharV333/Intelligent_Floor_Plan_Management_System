@@ -1,0 +1,37 @@
+.home-background {
+    background-image: url('front.jpg');
+    background-size: cover;
+    background-color: "beige";
+    background-attachment: fixed;
+    margin: 0;
+    padding: 0;
+    height: 100vh;
+    width: 100%;
+}
+
+.content {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    text-align: center;
+    padding-bottom:"30px";
+    margin-bottom: '20px';
+
+}
+.home-image {
+    display: block;
+    margin: 0 auto; 
+    max-width: 100%;
+  }
+
+.cards-container {
+    display: flex;
+    justify-content: center;
+    gap: 20px;    
+}
+
+.card {
+    width: 200px;
+    height: 200px;
+}
