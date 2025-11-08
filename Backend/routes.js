@@ -67,7 +67,10 @@ const userSchema = new mongoose.Schema({
     type: String,
     required: true
   },
-  // You can add more fields as needed
+  password: {                 // added password field (plaintext for demo only)
+    type: String,
+    required: true
+  },
   createdAt: {
     type: Date,
     default: Date.now
@@ -75,7 +78,10 @@ const userSchema = new mongoose.Schema({
 });
 
 const FloorPlan = mongoose.model("FloorPlan", floorPlanSchema);
-const User = mongoose.model('User', userSchema);
+const User = mongoose.models?.User || mongoose.model('User', userSchema);
+
+app.use(express.json());
+
 
 //****************************************** Sample Data *******************************/
 // const floorPlans = [
@@ -216,6 +222,34 @@ const User = mongoose.model('User', userSchema);
 //***************************************** GET *******************************************
 
 // GET all floor plans
+
+app.post('/login', async (req, res) => {
+  try {
+    const { email, password } = req.body;
+    if (!email || !password) return res.status(400).json({ message: 'Email and password required' });
+
+    const user = await User.findOne({ email: email });
+    if (!user) return res.status(401).json({ message: 'Invalid credentials' });
+
+    // NOTE: plaintext comparison — replace with bcrypt.compare in production
+    if (user.password !== password) return res.status(401).json({ message: 'Invalid credentials' });
+
+    // Do not send password back
+    const safeUser = {
+      _id: user._id,
+      username: user.username,
+      email: user.email,
+      contactNumber: user.contactNumber,
+      createdAt: user.createdAt
+    };
+
+    res.json({ message: 'Login successful', user: safeUser });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
 app.get('/floorplans', async (req, res) => {
   try {
     const floorPlans = await FloorPlan.find();
@@ -345,12 +379,24 @@ app.get('/users/:id', async (req, res) => {
 
 // POST a new user
 app.post('/add-user', async (req, res) => {
-  const user = new User(req.body);
   try {
-    const newUser = await user.save();
-    res.status(201).json(newUser);
-  } catch (error) {
-    res.status(400).json({ message: error.message });
+    const { username, email, contactNumber, password } = req.body;
+    if (!username || !email || !contactNumber || !password) {
+      return res.status(400).json({ message: 'All fields are required' });
+    }
+
+    // prevent duplicate email
+    const existing = await User.findOne({ email });
+    if (existing) return res.status(409).json({ message: 'Email already registered' });
+
+    const user = new User({ username, email, contactNumber, password });
+    await user.save();
+    // don't return password
+    const safeUser = { _id: user._id, username: user.username, email: user.email, contactNumber: user.contactNumber, createdAt: user.createdAt };
+    res.status(201).json({ message: 'User created', user: safeUser });
+  } catch (err) {
+    console.error('add-user error:', err);
+    res.status(500).json({ message: 'Server error' });
   }
 });
 
