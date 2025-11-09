@@ -1,26 +1,59 @@
-//********************************* Connection Requirements (Postman and MongoDb) ************************************* */
+// routes.js — Intelligent Floor Plan Management (Final Version)
+
 const express = require("express");
-const cors = require('cors');
-const app = express();
-app.use(express.json());
-app.use(cors());
-
-require("dotenv").config();
-const port = 8000;
-
-app.listen(port,()=>{
-  console.log(`Server listening at http://localhost:${port}`);
-})
-
+const cors = require("cors");
 const mongoose = require("mongoose");
-const uri = "mongodb+srv://sridharvasudevan2004_db_user:PeJxQYIkr3QilRp3@moveinsyncproj.uobwxeq.mongodb.net/?appName=MoveInSyncProj";
-mongoose
-  .connect(uri)
-  .then(() => console.log("MongoDB connected…"))
-  .catch((err) => console.log(err));
+const bcrypt = require("bcrypt");
+const jwt = require("jsonwebtoken");
+require("dotenv").config();
 
+const app = express();
+app.use(cors());
+app.use(express.json());
+
+// ===================== ENVIRONMENT CONFIG =====================
+const PORT = process.env.PORT || 8000;
+const MONGO_URI = process.env.MONGO_URI;
+const JWT_SECRET = process.env.JWT_SECRET || "super_secret_key";
+
+if (!MONGO_URI) {
+  console.error("❌ MONGO_URI not found in .env");
+  process.exit(1);
+}
+
+// ===================== DATABASE CONNECTION =====================
+mongoose
+  .connect(MONGO_URI)
+  .then(() => console.log("✅ MongoDB connected"))
+  .catch((err) => console.error("MongoDB connection error:", err));
+
+// ===================== SCHEMAS =====================
+
+// Seat Schema
+const seatSchema = new mongoose.Schema(
+  {
+    seatNumber: { type: Number, required: true },
+    occupied: { type: Boolean, default: false },
+  },
+  { _id: false }
+);
+
+// Room Schema
+const roomSchema = new mongoose.Schema(
+  {
+    roomNumber: { type: Number, required: true },
+    capacity: { type: Number, required: true },
+    booked: { type: Boolean, default: false },
+    bookedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
+    bookedUntil: { type: Date, default: null },
+    lastBookedAt: { type: Date, default: null },
+    bookingCount: { type: Number, default: 0 },
+  },
+  { _id: false }
+);
+
+// Floor Plan Schema
 //************************************ Defining Schema ************************************/
-// Define the schema for floor plans
 const floorPlanSchema = new mongoose.Schema({
   name: {
     type: String,
@@ -28,213 +61,136 @@ const floorPlanSchema = new mongoose.Schema({
   },
   description: String,
   seats: [{
-    seatNumber: {
-      type: Number,
-      required: true
-    },
-    occupied: {
-      type: Boolean,
-      default: false
-    }
+    seatNumber: { type: Number, required: true },
+    occupied: { type: Boolean, default: false }
   }],
   rooms: [{
-    roomNumber: {
-      type: Number,
-      required: true
-    },
-    capacity: {
-      type: Number,
-      required: true
-    },
-    booked: {
-      type: Boolean,
-      default: false
-    }
+    roomNumber: { type: Number, required: true },
+    capacity: { type: Number, required: true },
+    booked: { type: Boolean, default: false }
   }],
-});
 
-const userSchema = new mongoose.Schema({
-  username: {
-    type: String,
-    required: true
+  // 🆕 version control fields
+  version: {
+    type: Number,
+    default: 1
   },
-  email: {
-    type: String,
-    required: true,
-    unique: true
-  },
-  contactNumber: {
-    type: String,
-    required: true
-  },
-  password: {                 // added password field (plaintext for demo only)
-    type: String,
-    required: true
-  },
-  createdAt: {
+  lastModifiedAt: {
     type: Date,
     default: Date.now
   }
 });
 
+
+// User Schema
+const userSchema = new mongoose.Schema({
+  username: { type: String, required: true },
+  email: { type: String, required: true, unique: true },
+  contactNumber: { type: String, required: true },
+  password: { type: String, required: true },
+  createdAt: { type: Date, default: Date.now },
+});
+
 const FloorPlan = mongoose.model("FloorPlan", floorPlanSchema);
-const User = mongoose.models?.User || mongoose.model('User', userSchema);
+const User = mongoose.model("User", userSchema);
 
-app.use(express.json());
+// 🔒 Authentication Middleware
+const authMiddleware = (req, res, next) => {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader)
+      return res.status(401).json({ message: "Missing Authorization header" });
 
+    const token = authHeader.split(" ")[1];
+    if (!token)
+      return res.status(401).json({ message: "Malformed Authorization header" });
 
-//****************************************** Sample Data *******************************/
-// const floorPlans = [
-//   {
-//     name: "Main Office Floor Plan",
-//     description: "Floor plan for the main office building",
-//     seats: [
-//       { seatNumber: 1, occupied: false },
-//       { seatNumber: 2, occupied: true },
-//       { seatNumber: 3, occupied: true },
-//       { seatNumber: 4, occupied: false },
-//       { seatNumber: 5, occupied: true },
-//       { seatNumber: 6, occupied: false },
-//       { seatNumber: 7, occupied: true },
-//       { seatNumber: 8, occupied: false },
-//       { seatNumber: 9, occupied: true },
-//       { seatNumber: 10, occupied: false },
-//     ],
-//     rooms: [
-//       { roomNumber: 101, capacity: 20, booked: false },
-//       { roomNumber: 102, capacity: 15, booked: true },
-//       { roomNumber: 103, capacity: 25, booked: false },
-//       { roomNumber: 104, capacity: 10, booked: true },
-//       { roomNumber: 105, capacity: 30, booked: false },
-//     ],
-//   },
-//   {
-//     name: "Tech Park Floor Plan",
-//     description: "Floor plan for the technology park",
-//     seats: [
-//       { seatNumber: 1, occupied: false },
-//       { seatNumber: 2, occupied: true },
-//       { seatNumber: 3, occupied: false },
-//       { seatNumber: 4, occupied: true },
-//       { seatNumber: 5, occupied: false },
-//       { seatNumber: 6, occupied: true },      
-//       { seatNumber: 7, occupied: false },
-//       { seatNumber: 8, occupied: true },
-//       { seatNumber: 9, occupied: false },
-//       { seatNumber: 10, occupied: true },
-//     ],
-//     rooms: [
-//       { roomNumber: 201, capacity: 30, booked: false },
-//       { roomNumber: 202, capacity: 25, booked: false },
-//       { roomNumber: 203, capacity: 35, booked: false },
-//       { roomNumber: 204, capacity: 15, booked: false },
-//       { roomNumber: 205, capacity: 25, booked: false },
-//     ],
-//   },
-//   {
-//     name: "City Center Office Floor Plan",
-//     description: "Floor plan for the city center office location",
-//     seats: [
-//       { seatNumber: 1, occupied: false },
-//       { seatNumber: 2, occupied: true },
-//       { seatNumber: 3, occupied: false },
-//       { seatNumber: 4, occupied: true },
-//       { seatNumber: 5, occupied: false },
-//       { seatNumber: 6, occupied: true },      
-//       { seatNumber: 7, occupied: false },
-//       { seatNumber: 8, occupied: true },
-//       { seatNumber: 9, occupied: false },
-//       { seatNumber: 10, occupied: true },
-//     ],
-//     rooms: [
-//       { roomNumber: 301, capacity: 40, booked: false },
-//       { roomNumber: 302, capacity: 20, booked: false },
-//       { roomNumber: 303, capacity: 30, booked: false },
-//       { roomNumber: 304, capacity: 25, booked: false },
-//       { roomNumber: 305, capacity: 35, booked: false },
-//     ],
-//   },
-//   {
-//     name: "Industrial Park Floor Plan",
-//     description: "Floor plan for the industrial park",
-//     seats: [
-//       { seatNumber: 1, occupied: false },
-//       { seatNumber: 2, occupied: false },
-//       { seatNumber: 3, occupied: false },
-//       { seatNumber: 4, occupied: true },
-//       { seatNumber: 5, occupied: false },
-//       { seatNumber: 6, occupied: true },      
-//       { seatNumber: 7, occupied: false },
-//       { seatNumber: 8, occupied: true },
-//       { seatNumber: 9, occupied: false },
-//       { seatNumber: 10, occupied: true },
-//     ],
-//     rooms: [
-//       { roomNumber: 401, capacity: 50, booked: false },
-//       { roomNumber: 402, capacity: 45, booked: false },
-//       { roomNumber: 403, capacity: 60, booked: false },
-//       { roomNumber: 404, capacity: 55, booked: false },
-//       { roomNumber: 405, capacity: 40, booked: false },
-//     ],
-//   },
-// ];
+    const decoded = jwt.verify(token, JWT_SECRET);
+    req.user = decoded; // attach decoded user (userId, email, etc.)
+    next();
+  } catch (err) {
+    console.error("Auth error:", err);
+    res.status(401).json({ message: "Invalid or expired token" });
+  }
+};
+
+// ===================== AUTH ROUTES =====================
+
+// Signup
+app.post("/signup", async (req, res) => {
+  try {
+    const { username, email, contactNumber, password } = req.body;
+    if (!username || !email || !contactNumber || !password)
+      return res.status(400).json({ message: "All fields are required" });
+
+    const exists = await User.findOne({ email });
+    if (exists) return res.status(409).json({ message: "Email already registered" });
+
+    const hashedPassword = await bcrypt.hash(password, 10);
+    const user = await User.create({ username, email, contactNumber, password: hashedPassword });
+
+    const token = jwt.sign({ userId: user._id, email: user.email }, JWT_SECRET, { expiresIn: "8h" });
+    const safeUser = { _id: user._id, username, email, contactNumber, createdAt: user.createdAt };
+
+    res.status(201).json({ message: "Signup successful", user: safeUser, token });
+  } catch (err) {
+    res.status(500).json({ message: "Signup failed", error: err.message });
+  }
+});
+
+app.post('/add-user', async (req, res) => {
+  try {
+    const { username, email, contactNumber, password } = req.body;
+    if (!username || !email || !contactNumber || !password) {
+      return res.status(400).json({ message: 'All fields are required' });
+    }
+
+    const existing = await User.findOne({ email });
+    if (existing) return res.status(409).json({ message: 'Email already registered' });
+
+    // Hash the password before saving
+    const hashedPassword = await bcrypt.hash(password, 10);
+
+    const user = new User({ username, email, contactNumber, password: hashedPassword });
+    await user.save();
+
+    const safeUser = {
+      _id: user._id,
+      username: user.username,
+      email: user.email,
+      contactNumber: user.contactNumber,
+      createdAt: user.createdAt,
+    };
+    res.status(201).json({ message: 'User created', user: safeUser });
+  } catch (err) {
+    console.error('add-user error:', err);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
 
 
-// const users = [
-//   {
-//     username: "user1",
-//     email: "user1@example.com",
-//     contactNumber: "1234567890"
-//   },
-//   {
-//     username: "user2",
-//     email: "user2@example.com",
-//     contactNumber: "9876543210"
-//   },
-//   {
-//     username: "user3",
-//     email: "user3@example.com",
-//     contactNumber: "1234577890"
-//   },
-//   {
-//     username: "user4",
-//     email: "user4@example.com",
-//     contactNumber: "9876553210"
-//   }
-// ];
-
-// ************************* Add sample documents to the database ***************************
-// const addDocsToDB = async () => {
-//   try {
-//     await FloorPlan.insertMany(floorPlans);
-//     console.log("Plans added successfully!");
-//
-//     await User.insertMany(users);
-//     console.log("Users added successfully!");
-//   } catch (error) {
-//     console.error("Error adding Plans:", error);
-//   }
-// };
-// addDocsToDB();
-
-
-// ***********************************List of Possible Routes*********************************
-//***************************************** GET *******************************************
-
-// GET all floor plans
-
+// Login
 app.post('/login', async (req, res) => {
   try {
     const { email, password } = req.body;
-    if (!email || !password) return res.status(400).json({ message: 'Email and password required' });
+    if (!email || !password)
+      return res.status(400).json({ message: 'Email and password required' });
 
-    const user = await User.findOne({ email: email });
-    if (!user) return res.status(401).json({ message: 'Invalid credentials' });
+    const user = await User.findOne({ email });
+    if (!user)
+      return res.status(401).json({ message: 'Invalid credentials' });
 
-    // NOTE: plaintext comparison — replace with bcrypt.compare in production
-    if (user.password !== password) return res.status(401).json({ message: 'Invalid credentials' });
+    // Compare with bcrypt
+    const isMatch = await bcrypt.compare(password, user.password);
+    if (!isMatch)
+      return res.status(401).json({ message: 'Invalid credentials' });
 
-    // Do not send password back
+    const token = jwt.sign(
+      { userId: user._id, email: user.email },
+      JWT_SECRET,
+      { expiresIn: "2h" }
+    );
+
     const safeUser = {
       _id: user._id,
       username: user.username,
@@ -243,220 +199,336 @@ app.post('/login', async (req, res) => {
       createdAt: user.createdAt
     };
 
-    res.json({ message: 'Login successful', user: safeUser });
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: 'Server error' });
+    res.json({
+      message: "Login successful",
+      user: safeUser,
+      token
+    });
+  } catch (err) {
+    console.error("Login error:", err);
+    res.status(500).json({ message: "Server error" });
   }
 });
+// Logout (dummy endpoint for frontend compatibility)
+app.post("/logout", (req, res) => {
+  res.json({ message: "Logged out successfully" });
+});
 
-app.get('/floorplans', async (req, res) => {
+// ===================== FLOOR PLAN ROUTES =====================
+
+// Get all floor plans
+app.get("/floorplans", authMiddleware, async (req, res) => {
   try {
-    const floorPlans = await FloorPlan.find();
-    res.json(floorPlans);
-  } catch (error) {
-    res.status(500).json({ message: error.message });
+    const plans = await FloorPlan.find();
+    res.json(plans);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
   }
 });
 
-// GET a single floor plan by ID
-app.get('/floorplans/:id', async (req, res) => {
+// Add new floor plan
+app.post("/add-floorplan", authMiddleware, async (req, res) => {
   try {
-    const floorPlan = await FloorPlan.findById(req.params.id);
-    if (floorPlan) {
-      res.json(floorPlan);
-    } else {
-      res.status(404).json({ message: 'Floor plan not found' });
-    }
-  } catch (error) {
-    res.status(500).json({ message: error.message });
+    const newPlan = new FloorPlan(req.body);
+    const saved = await newPlan.save();
+    res.status(201).json(saved);
+  } catch (err) {
+    res.status(400).json({ message: "Failed to add floor plan", error: err.message });
   }
 });
 
-// POST a new floor plan
-app.post('/add-floorplan', async (req, res) => {
-  const floorPlan = new FloorPlan(req.body);
-  try {
-    const newFloorPlan = await floorPlan.save();
-    res.status(201).json(newFloorPlan);
-  } catch (error) {
-    res.status(400).json({ message: error.message });
-  }
-});
-
-// PUT update a floor plan by ID
+// Update floor plan (with version conflict check)
+// PUT update a floor plan by ID (with version control)
 app.put('/update-floorplan/:id', async (req, res) => {
   try {
-    const floorPlan = await FloorPlan.findByIdAndUpdate(req.params.id, req.body, { new: true });
-    if (floorPlan) {
-      res.json(floorPlan);
-    } else {
-      res.status(404).json({ message: 'Floor plan not found' });
-    }
-  } catch (error) {
-    res.status(400).json({ message: error.message });
-  }
-});
-
-// PATCH update a floor plan by ID
-app.patch('/update-floorplan/:id', async (req, res) => {
-  try {
-    const floorPlan = await FloorPlan.findByIdAndUpdate(req.params.id, req.body, { new: true });
-    if (floorPlan) {
-      res.json(floorPlan);
-    } else {
-      res.status(404).json({ message: 'Floor plan not found' });
-    }
-  } catch (error) {
-    res.status(400).json({ message: error.message });
-  }
-});
-
-// PATCH update a seat in a floor plan by seat number
-app.patch('/floorplans/:id/seats/:seatNumber', async (req, res) => {
-  try {
+    const { version } = req.body; // version from frontend
     const floorPlan = await FloorPlan.findById(req.params.id);
+
     if (!floorPlan) {
       return res.status(404).json({ message: 'Floor plan not found' });
     }
-    const seatIndex = floorPlan.seats.findIndex(seat => seat.seatNumber === req.params.seatNumber);
-    if (seatIndex === -1) {
-      return res.status(404).json({ message: 'Seat not found' });
-    }
-    floorPlan.seats[seatIndex] = { ...floorPlan.seats[seatIndex], ...req.body };
-    await floorPlan.save();
-    res.json(floorPlan);
-  } catch (error) {
-    res.status(400).json({ message: error.message });
-  }
-});
 
-// PATCH update a room in a floor plan by room number
-app.patch('/floorplans/:id/rooms/:roomNumber', async (req, res) => {
-  try {
-    const floorPlan = await FloorPlan.findById(req.params.id);
-    if (!floorPlan) {
-      return res.status(404).json({ message: 'Floor plan not found' });
-    }
-    const roomIndex = floorPlan.rooms.findIndex(room => room.roomNumber === req.params.roomNumber);
-    if (roomIndex === -1) {
-      return res.status(404).json({ message: 'Room not found' });
-    }
-    floorPlan.rooms[roomIndex] = { ...floorPlan.rooms[roomIndex], ...req.body };
-    await floorPlan.save();
-    res.json(floorPlan);
-  } catch (error) {
-    res.status(400).json({ message: error.message });
-  }
-});
-
-
-
-
-// GET all users
-app.get('/all-users', async (req, res) => {
-  try {
-    const users = await User.find();
-    res.json(users);
-  } catch (error) {
-    res.status(500).send(error);
-  }
-});
-
-// GET a single user by ID
-app.get('/users/:id', async (req, res) => {
-  try {
-    const user = await User.findById(req.params.id);
-    if (user) {
-      res.json(user);
+    // 🧠 Version check — prevents overwriting a newer version
+    if (err.response?.status === 409) {
+      console.warn('Conflict during sync. Keeping unsynced data for review.');
+      // keep local copy instead of clearing
     } else {
-      res.status(404).json({ message: 'User not found' });
+      clearOfflineChanges();
     }
+
+
+    if (version && version < floorPlan.version) {
+      return res.status(409).json({
+        message: 'Conflict detected. The floor plan was updated by another admin.',
+        currentVersion: floorPlan.version,
+      });
+    }
+
+    // If ok → update and increment version
+    const updated = await FloorPlan.findByIdAndUpdate(
+      req.params.id,
+      {
+        ...req.body,
+        version: floorPlan.version + 1,
+        lastModifiedAt: new Date()
+      },
+      { new: true }
+    );
+
+    res.json({
+      message: 'Floor plan updated successfully',
+      updatedPlan: updated
+    });
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    console.error('Update error:', error);
+    res.status(400).json({ message: error.message });
   }
 });
 
-// POST a new user
-app.post('/add-user', async (req, res) => {
+
+// Delete floor plan
+app.delete("/delete-floorplan/:id", authMiddleware, async (req, res) => {
   try {
-    const { username, email, contactNumber, password } = req.body;
-    if (!username || !email || !contactNumber || !password) {
-      return res.status(400).json({ message: 'All fields are required' });
-    }
-
-    // prevent duplicate email
-    const existing = await User.findOne({ email });
-    if (existing) return res.status(409).json({ message: 'Email already registered' });
-
-    const user = new User({ username, email, contactNumber, password });
-    await user.save();
-    // don't return password
-    const safeUser = { _id: user._id, username: user.username, email: user.email, contactNumber: user.contactNumber, createdAt: user.createdAt };
-    res.status(201).json({ message: 'User created', user: safeUser });
+    const deleted = await FloorPlan.findByIdAndDelete(req.params.id);
+    if (!deleted) return res.status(404).json({ message: "Floor plan not found" });
+    res.json({ message: "Floor plan deleted successfully" });
   } catch (err) {
-    console.error('add-user error:', err);
-    res.status(500).json({ message: 'Server error' });
+    res.status(500).json({ message: err.message });
   }
 });
 
-// PUT update a user by ID
-app.put('/update-user/:id', async (req, res) => {
+// // ===================== MEETING ROOM ROUTES =====================
+
+// // Suggest best room based on participants
+// app.get("/floorplans/:id/suggest-room", authMiddleware, async (req, res) => {
+//   try {
+//     const participants = Number(req.query.participants || 1);
+//     const fp = await FloorPlan.findById(req.params.id);
+//     if (!fp) return res.status(404).json({ message: "Floor plan not found" });
+
+//     const candidates = fp.rooms.filter((r) => !r.booked && r.capacity >= participants);
+//     if (candidates.length === 0) return res.status(404).json({ message: "No suitable room available" });
+
+//     candidates.sort((a, b) => a.capacity - b.capacity);
+//     const best = candidates[0];
+//     res.json({ suggestedRoom: best });
+//   } catch (err) {
+//     res.status(500).json({ message: err.message });
+//   }
+// });
+
+// // Book a room
+// app.post("/floorplans/:id/book-room/:roomNumber", authMiddleware, async (req, res) => {
+//   try {
+//     const { userId, durationMinutes = 60 } = req.body;
+//     const fp = await FloorPlan.findById(req.params.id);
+//     if (!fp) return res.status(404).json({ message: "Floor plan not found" });
+
+//     const room = fp.rooms.find((r) => r.roomNumber === Number(req.params.roomNumber));
+//     if (!room) return res.status(404).json({ message: "Room not found" });
+//     if (room.booked) return res.status(409).json({ message: "Room already booked" });
+
+//     room.booked = true;
+//     room.bookedBy = userId;
+//     room.bookedUntil = new Date(Date.now() + durationMinutes * 60000);
+//     room.lastBookedAt = new Date();
+//     room.bookingCount = (room.bookingCount || 0) + 1;
+
+//     fp.version++;
+//     await fp.save();
+//     res.json({ message: "Room booked successfully", room });
+//   } catch (err) {
+//     res.status(500).json({ message: err.message });
+//   }
+// });
+
+// // Unbook a room
+// app.post("/floorplans/:id/unbook-room/:roomNumber", authMiddleware, async (req, res) => {
+//   try {
+//     const fp = await FloorPlan.findById(req.params.id);
+//     if (!fp) return res.status(404).json({ message: "Floor plan not found" });
+
+//     const room = fp.rooms.find((r) => r.roomNumber === Number(req.params.roomNumber));
+//     if (!room) return res.status(404).json({ message: "Room not found" });
+
+//     room.booked = false;
+//     room.bookedBy = null;
+//     room.bookedUntil = null;
+
+//     fp.version++;
+//     await fp.save();
+//     res.json({ message: "Room unbooked successfully", room });
+//   } catch (err) {
+//     res.status(500).json({ message: err.message });
+//   }
+// });
+
+// ===================== MEETING ROOM ROUTES =====================
+
+// Suggest best room based on participants
+app.get("/floorplans/:id/suggest-room", authMiddleware, async (req, res) => {
   try {
-    const user = await User.findByIdAndUpdate(req.params.id, req.body, { new: true });
-    if (user) {
-      res.json(user);
-    } else {
-      res.status(404).json({ message: 'User not found' });
-    }
-  } catch (error) {
-    res.status(400).json({ message: error.message });
+    const participants = Number(req.query.participants || 1);
+    const fp = await FloorPlan.findById(req.params.id);
+    if (!fp) return res.status(404).json({ message: "Floor plan not found" });
+
+    const available = fp.rooms.filter((r) => !r.booked && r.capacity >= participants);
+    if (available.length === 0)
+      return res.status(404).json({ message: "No suitable room available" });
+
+    // Pick smallest room that fits participants
+    const best = available.sort((a, b) => a.capacity - b.capacity)[0];
+    res.json({ suggestedRoom: best });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
   }
 });
 
-// PATCH update a user by ID
-app.patch('/update-user/:id', async (req, res) => {
+// Book a room
+app.post("/floorplans/:id/book-room/:roomNumber", authMiddleware, async (req, res) => {
   try {
-    const user = await User.findByIdAndUpdate(req.params.id, req.body, { new: true });
-    if (user) {
-      res.json(user);
-    } else {
-      res.status(404).json({ message: 'User not found' });
-    }
-  } catch (error) {
-    res.status(400).json({ message: error.message });
+    const { userId, durationMinutes = 60 } = req.body;
+    const floorPlan = await FloorPlan.findById(req.params.id);
+    if (!floorPlan) return res.status(404).json({ message: "Floor plan not found" });
+
+    const room = floorPlan.rooms.find(
+      (r) => r.roomNumber === Number(req.params.roomNumber)
+    );
+    if (!room) return res.status(404).json({ message: "Room not found" });
+    if (room.booked)
+      return res.status(409).json({ message: "Room already booked" });
+
+    // Mark room as booked
+    const expiry = new Date(Date.now() + durationMinutes * 60000);
+    room.booked = true;
+    room.bookedBy = userId;
+    room.bookedUntil = expiry;
+    room.lastBookedAt = new Date();
+    room.bookingCount = (room.bookingCount || 0) + 1;
+
+    floorPlan.version++;
+    await floorPlan.save();
+
+    res.json({
+      message: `Room ${room.roomNumber} booked successfully`,
+      room,
+      floorPlan,
+    });
+  } catch (err) {
+    console.error("Booking error:", err);
+    res.status(500).json({ message: err.message });
   }
 });
 
-app.delete('/delete-floorplan/:id', async (req, res) => {
+// Unbook a room
+app.post("/floorplans/:id/unbook-room/:roomNumber", authMiddleware, async (req, res) => {
   try {
-    const deletedFloorPlan = await FloorPlan.findByIdAndDelete(req.params.id);
-    if (deletedFloorPlan) {
-      res.json({ message: 'Floor plan deleted successfully' });
-    } else {
-      res.status(404).json({ message: 'Floor plan not found' });
+    const { userId } = req.body;
+    const floorPlan = await FloorPlan.findById(req.params.id);
+    if (!floorPlan) return res.status(404).json({ message: "Floor plan not found" });
+
+    const room = floorPlan.rooms.find(
+      (r) => r.roomNumber === Number(req.params.roomNumber)
+    );
+    if (!room) return res.status(404).json({ message: "Room not found" });
+    if (!room.booked)
+      return res.status(400).json({ message: "Room is not currently booked" });
+
+    // Only the user who booked it can unbook
+    if (userId && room.bookedBy && String(room.bookedBy) !== userId) {
+      return res.status(403).json({ message: "You cannot unbook a room booked by another user" });
     }
-  } catch (error) {
-    res.status(500).json({ message: error.message });
+
+    room.booked = false;
+    room.bookedBy = null;
+    room.bookedUntil = null;
+
+    floorPlan.version++;
+    await floorPlan.save();
+
+    res.json({
+      message: `Room ${room.roomNumber} unbooked successfully`,
+      room,
+      floorPlan,
+    });
+  } catch (err) {
+    console.error("Unbooking error:", err);
+    res.status(500).json({ message: err.message });
   }
 });
 
-// DELETE a user by ID
-app.delete('/delete-user/:id', async (req, res) => {
+
+
+// ===================== USER BOOKINGS ROUTE =====================
+// Returns all rooms booked by a specific user across all floor plans
+app.get("/my-bookings/:userId", authMiddleware, async (req, res) => {
   try {
-    const deletedUser = await User.findByIdAndDelete(req.params.id);
-    if (deletedUser) {
-      res.json({ message: 'User deleted successfully' });
-    } else {
-      res.status(404).json({ message: 'User not found' });
-    }
-  } catch (error) {
-    res.status(500).json({ message: error.message });
+    const { userId } = req.params;
+    const plans = await FloorPlan.find();
+
+    const myRooms = [];
+    plans.forEach((plan) => {
+      plan.rooms.forEach((room) => {
+        if (room.bookedBy && String(room.bookedBy) === userId) {
+          myRooms.push({
+            floorPlanId: plan._id,
+            floorPlanName: plan.name,
+            roomNumber: room.roomNumber,
+            capacity: room.capacity,
+            bookedUntil: room.bookedUntil,
+          });
+        }
+      });
+    });
+
+    res.json({ count: myRooms.length, rooms: myRooms });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
   }
 });
 
 
-//************************************************************************************
+// ===================== OFFLINE SYNC ROUTE =====================
+app.post("/floorplans/:id/sync", authMiddleware, async (req, res) => {
+  try {
+    const fp = await FloorPlan.findById(req.params.id);
+    if (!fp) return res.status(404).json({ message: "Floor plan not found" });
+
+    const { changes } = req.body;
+    if (!Array.isArray(changes)) return res.status(400).json({ message: "Invalid sync data" });
+
+    let modified = false;
+    for (const ch of changes) {
+      if (ch.type === "seat") {
+        const seat = fp.seats.find((s) => s.seatNumber === ch.identifier);
+        if (seat && ch.op === "update") {
+          Object.assign(seat, ch.payload);
+          modified = true;
+        }
+      } else if (ch.type === "room") {
+        const room = fp.rooms.find((r) => r.roomNumber === ch.identifier);
+        if (room && ch.op === "update") {
+          Object.assign(room, ch.payload);
+          modified = true;
+        }
+      }
+    }
+
+    if (modified) {
+      fp.version++;
+      await fp.save();
+    }
+
+    res.json({ message: "Sync successful", version: fp.version });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+// ===================== CATCH-ALL ROUTE =====================
 app.get("/*", (req, res) => {
-  res.send("You are on the wrong route");
+  res.status(404).send("Invalid route");
 });
+
+// ===================== START SERVER =====================
+app.listen(PORT, () => console.log(`🚀 Server running on http://localhost:${PORT}`));
