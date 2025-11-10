@@ -64,11 +64,17 @@ const floorPlanSchema = new mongoose.Schema({
     seatNumber: { type: Number, required: true },
     occupied: { type: Boolean, default: false }
   }],
-  rooms: [{
-    roomNumber: { type: Number, required: true },
-    capacity: { type: Number, required: true },
-    booked: { type: Boolean, default: false }
-  }],
+  rooms: [
+    {
+      roomNumber: { type: Number, required: true },
+      capacity: { type: Number, required: true },
+      booked: { type: Boolean, default: false },
+      bookedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' }, // 🆕 who booked
+      bookedUntil: { type: Date },
+      bookingCount: { type: Number, default: 0 }, // 🆕 weightage tracking
+      lastBookedAt: { type: Date }, // 🆕 timestamp for latest booking
+    },
+  ],
 
   // 🆕 version control fields
   version: {
@@ -241,49 +247,61 @@ app.post("/add-floorplan", authMiddleware, async (req, res) => {
 // PUT update a floor plan by ID (with version control)
 app.put('/update-floorplan/:id', async (req, res) => {
   try {
-    const { version } = req.body; // version from frontend
-    const floorPlan = await FloorPlan.findById(req.params.id);
+    const { version, name, description, seats, rooms } = req.body;
 
+    // 1️⃣ Find the existing plan
+    const floorPlan = await FloorPlan.findById(req.params.id);
     if (!floorPlan) {
       return res.status(404).json({ message: 'Floor plan not found' });
     }
 
-    // 🧠 Version check — prevents overwriting a newer version
-    if (err.response?.status === 409) {
-      console.warn('Conflict during sync. Keeping unsynced data for review.');
-      // keep local copy instead of clearing
-    } else {
-      clearOfflineChanges();
-    }
-
-
+    // 2️⃣ Version conflict detection
     if (version && version < floorPlan.version) {
       return res.status(409).json({
-        message: 'Conflict detected. The floor plan was updated by another admin.',
+        message: 'Conflict detected. Another admin updated this floor plan.',
         currentVersion: floorPlan.version,
       });
     }
 
-    // If ok → update and increment version
-    const updated = await FloorPlan.findByIdAndUpdate(
-      req.params.id,
-      {
-        ...req.body,
-        version: floorPlan.version + 1,
-        lastModifiedAt: new Date()
-      },
-      { new: true }
-    );
+    // 3️⃣ Update fields safely
+    if (name !== undefined) floorPlan.name = name;
+    if (description !== undefined) floorPlan.description = description;
 
+    if (Array.isArray(seats)) {
+      floorPlan.seats = seats.map((s) => ({
+        seatNumber: Number(s.seatNumber),
+        occupied: Boolean(s.occupied),
+      }));
+    }
+
+    if (Array.isArray(rooms)) {
+      floorPlan.rooms = rooms.map((r) => ({
+        roomNumber: Number(r.roomNumber),
+        capacity: Number(r.capacity),
+        booked: Boolean(r.booked),
+        bookedBy: r.bookedBy || null,
+        bookingCount: r.bookingCount || 0,
+        bookedUntil: r.bookedUntil || null,
+        lastBookedAt: r.lastBookedAt || null,
+      }));
+    }
+
+    // 4️⃣ Increment version and update metadata
+    floorPlan.version = (floorPlan.version || 1) + 1;
+    floorPlan.lastModifiedAt = new Date();
+
+    // 5️⃣ Save the updated document
+    const updated = await floorPlan.save();
     res.json({
-      message: 'Floor plan updated successfully',
-      updatedPlan: updated
+      message: 'Floor plan updated successfully!',
+      updatedPlan: updated,
     });
   } catch (error) {
-    console.error('Update error:', error);
-    res.status(400).json({ message: error.message });
+    console.error('Update-floorplan error:', error);
+    res.status(500).json({ message: 'Server error during update', error: error.message });
   }
 });
+
 
 
 // Delete floor plan
@@ -366,59 +384,75 @@ app.delete("/delete-floorplan/:id", authMiddleware, async (req, res) => {
 // ===================== MEETING ROOM ROUTES =====================
 
 // Suggest best room based on participants
-app.get("/floorplans/:id/suggest-room", authMiddleware, async (req, res) => {
+// POST /floorplans/:id/suggest-room
+// POST /floorplans/:id/suggest-room
+app.post('/floorplans/:id/suggest-room', async (req, res) => {
   try {
-    const participants = Number(req.query.participants || 1);
-    const fp = await FloorPlan.findById(req.params.id);
-    if (!fp) return res.status(404).json({ message: "Floor plan not found" });
+    const { participants } = req.body;
+    if (!participants)
+      return res.status(400).json({ message: 'Number of participants is required' });
 
-    const available = fp.rooms.filter((r) => !r.booked && r.capacity >= participants);
-    if (available.length === 0)
-      return res.status(404).json({ message: "No suitable room available" });
+    const floorPlan = await FloorPlan.findById(req.params.id);
+    if (!floorPlan) return res.status(404).json({ message: 'Floor plan not found' });
 
-    // Pick smallest room that fits participants
-    const best = available.sort((a, b) => a.capacity - b.capacity)[0];
-    res.json({ suggestedRoom: best });
+    const availableRooms = floorPlan.rooms.filter((r) => !r.booked);
+
+    if (availableRooms.length === 0)
+      return res.status(400).json({ message: 'No rooms available for booking' });
+
+    // Sort by closest fit capacity, then by least used
+    const bestRoom = availableRooms
+      .filter((r) => r.capacity >= participants)
+      .sort((a, b) => {
+        const diffA = a.capacity - participants;
+        const diffB = b.capacity - participants;
+        if (diffA === diffB) return (a.bookingCount || 0) - (b.bookingCount || 0);
+        return diffA - diffB;
+      })[0];
+
+    if (!bestRoom)
+      return res.status(400).json({ message: 'No suitable room found for given participants' });
+
+    res.json({ suggestedRoom: bestRoom });
   } catch (err) {
+    console.error('Suggest room error:', err);
     res.status(500).json({ message: err.message });
   }
 });
+
+
 
 // Book a room
-app.post("/floorplans/:id/book-room/:roomNumber", authMiddleware, async (req, res) => {
+// POST /floorplans/:id/book-room/:roomNumber
+// POST /floorplans/:id/book-room/:roomNumber
+app.post('/floorplans/:id/book-room/:roomNumber', async (req, res) => {
   try {
-    const { userId, durationMinutes = 60 } = req.body;
+    const { userId, durationMinutes = 60 } = req.body; // default booking duration
     const floorPlan = await FloorPlan.findById(req.params.id);
-    if (!floorPlan) return res.status(404).json({ message: "Floor plan not found" });
+    if (!floorPlan) return res.status(404).json({ message: 'Floor plan not found' });
 
-    const room = floorPlan.rooms.find(
-      (r) => r.roomNumber === Number(req.params.roomNumber)
-    );
-    if (!room) return res.status(404).json({ message: "Room not found" });
+    const room = floorPlan.rooms.find((r) => r.roomNumber === Number(req.params.roomNumber));
+    if (!room) return res.status(404).json({ message: 'Room not found' });
+
     if (room.booked)
-      return res.status(409).json({ message: "Room already booked" });
+      return res.status(400).json({ message: 'Room already booked' });
 
-    // Mark room as booked
-    const expiry = new Date(Date.now() + durationMinutes * 60000);
+    // Book the room
     room.booked = true;
-    room.bookedBy = userId;
-    room.bookedUntil = expiry;
+    room.bookedBy = userId || null;
     room.lastBookedAt = new Date();
     room.bookingCount = (room.bookingCount || 0) + 1;
+    room.bookedUntil = new Date(Date.now() + durationMinutes * 60000);
 
-    floorPlan.version++;
     await floorPlan.save();
-
-    res.json({
-      message: `Room ${room.roomNumber} booked successfully`,
-      room,
-      floorPlan,
-    });
+    res.json({ message: 'Room booked successfully', room });
   } catch (err) {
-    console.error("Booking error:", err);
+    console.error('Book room error:', err);
     res.status(500).json({ message: err.message });
   }
 });
+
+
 
 // Unbook a room
 app.post("/floorplans/:id/unbook-room/:roomNumber", authMiddleware, async (req, res) => {

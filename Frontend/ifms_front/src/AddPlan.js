@@ -127,7 +127,7 @@ function AddPlan() {
               onChange={(e) => setDescription(e.target.value)}
             />
           </Grid>
-          <Grid item xs={6}>
+          {/* <Grid item xs={6}>
             <TextField
               label="Seat Number"
               fullWidth
@@ -136,7 +136,7 @@ function AddPlan() {
               onChange={(e) => setSeatNumber(e.target.value)}
               required
             />
-          </Grid>
+          </Grid> */}
           <Grid item xs={6}>
             <TextField
               label="Room Number"

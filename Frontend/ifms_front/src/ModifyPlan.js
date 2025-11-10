@@ -241,7 +241,7 @@ function ModifyPlan() {
             </Grid>
 
             {/* ---------- Seats Section ---------- */}
-            <Grid item xs={12}>
+            {/* <Grid item xs={12}>
               <Typography variant="h6" gutterBottom>Seats</Typography>
               {seats.map((seat, index) => (
                 <Box key={index} sx={{ display: 'flex', gap: 2, alignItems: 'center', mb: 1 }}>
@@ -265,7 +265,7 @@ function ModifyPlan() {
               >
                 Add Seat
               </Button>
-            </Grid>
+            </Grid> */}
 
             <Grid item xs={12}>
               <Button
