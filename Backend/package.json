@@ -2,25 +2,26 @@
   "name": "intelligent-floor-plan-management-system",
   "version": "1.0.0",
   "description": "Intelligent Floor-plan Management-system",
-  "main": "routes.js",
+  "main": "index.js",
   "scripts": {
-    "test": "This is test command"
+    "test": "This is test command",
+    "start": "node index.js"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/Deepanshi03/Intelligent-Floor-Plan-Management-System.git"
+    "url": "git+https://github.com/SridharV333/Intelligent_Floor_Plan_Management_System.git"
   },
   "keywords": [
     "Floor",
     "Plan",
     "Management"
   ],
-  "author": "Deepanshi Dey",
+  "author": "Sridhar Vasudevan",
   "license": "ISC",
   "bugs": {
-    "url": "https://github.com/Deepanshi03/Intelligent-Floor-Plan-Management-System/issues"
+    "url": "https://github.com/SridharV333/Intelligent_Floor_Plan_Management_System/issues"
   },
-  "homepage": "https://github.com/Deepanshi03/Intelligent-Floor-Plan-Management-System#readme",
+  "homepage": "https://github.com/SridharV333/Intelligent_Floor_Plan_Management_System#readme",
   "dependencies": {
     "bcrypt": "^6.0.0",
     "cors": "^2.8.5",
